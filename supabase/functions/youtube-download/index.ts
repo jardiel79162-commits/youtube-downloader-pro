@@ -6,7 +6,6 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -23,156 +22,141 @@ serve(async (req) => {
 
     console.log('Processing download request:', { url, format, quality });
 
-    // Use the new Cobalt API v10
-    const cobaltUrl = 'https://api.cobalt.tools/';
-    
-    const requestBody = {
-      url: url,
-      videoQuality: quality || '720',
-      audioFormat: 'mp3',
-      downloadMode: format === 'audio' ? 'audio' : 'auto',
-    };
+    // Extract video ID
+    const videoIdMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([^&\n?#]+)/);
+    const videoId = videoIdMatch?.[1];
 
-    console.log('Sending request to Cobalt API v10:', requestBody);
-
-    const response = await fetch(cobaltUrl, {
-      method: 'POST',
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    const data = await response.json();
-    console.log('Cobalt API response:', data);
-
-    // Handle different response statuses
-    if (data.status === 'error') {
-      console.error('Cobalt error:', data);
-      
-      // Fallback to alternative download method
-      return await fallbackDownload(url, format, quality, corsHeaders);
+    if (!videoId) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Link do YouTube inválido' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
-    if (data.status === 'tunnel' || data.status === 'redirect') {
+    // Try multiple download services
+    const downloadUrl = await getDownloadUrl(videoId, format, quality);
+    
+    if (downloadUrl) {
       return new Response(
         JSON.stringify({ 
           success: true, 
-          downloadUrl: data.url,
-          filename: data.filename || 'download'
+          downloadUrl: downloadUrl,
+          videoId: videoId
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    if (data.status === 'picker') {
-      // Multiple options available
-      const firstOption = data.picker?.[0];
-      if (firstOption?.url) {
-        return new Response(
-          JSON.stringify({ 
-            success: true, 
-            downloadUrl: firstOption.url,
-            picker: true,
-            options: data.picker
-          }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-    }
-
-    // If cobalt fails, use fallback
-    return await fallbackDownload(url, format, quality, corsHeaders);
-
-  } catch (error) {
-    console.error('Error processing download:', error);
     return new Response(
       JSON.stringify({ 
         success: false, 
-        error: error instanceof Error ? error.message : 'Erro interno do servidor'
+        error: 'Não foi possível obter o link de download. Tente outro vídeo.'
+      }),
+      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+
+  } catch (error) {
+    console.error('Error:', error);
+    return new Response(
+      JSON.stringify({ 
+        success: false, 
+        error: 'Erro ao processar. Tente novamente.'
       }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });
 
-// Fallback using y2mate-style service
-async function fallbackDownload(url: string, format: string, quality: string, corsHeaders: Record<string, string>) {
-  console.log('Using fallback download method');
+async function getDownloadUrl(videoId: string, format: string, quality: string): Promise<string | null> {
+  const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
   
+  // Try loader.to API
   try {
-    // Extract video ID
-    const videoIdMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([^&\n?#]+)/);
-    const videoId = videoIdMatch?.[1];
+    console.log('Trying loader.to...');
+    const loaderFormat = format === 'audio' ? 'mp3' : `mp4-${quality}`;
     
-    if (!videoId) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'ID do vídeo não encontrado' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Use ssyoutube API as fallback
-    const apiUrl = `https://api.ssyoutube.com/v2/download?url=${encodeURIComponent(url)}`;
-    
-    const response = await fetch(apiUrl, {
-      method: 'GET',
+    // Step 1: Initialize download
+    const initResponse = await fetch('https://loader.to/ajax/download.php', {
+      method: 'POST',
       headers: {
-        'Accept': 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
       },
+      body: `format=${loaderFormat}&url=${encodeURIComponent(youtubeUrl)}`,
     });
-
-    if (response.ok) {
-      const data = await response.json();
-      console.log('Fallback API response:', data);
-      
-      if (data.url) {
-        return new Response(
-          JSON.stringify({ 
-            success: true, 
-            downloadUrl: data.url,
-            filename: data.title || 'video'
-          }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
+    
+    const initData = await initResponse.json();
+    console.log('Loader init response:', initData);
+    
+    if (initData.success && initData.id) {
+      // Step 2: Poll for download link
+      for (let i = 0; i < 30; i++) {
+        await new Promise(r => setTimeout(r, 2000));
+        
+        const progressResponse = await fetch(`https://loader.to/ajax/progress.php?id=${initData.id}`);
+        const progressData = await progressResponse.json();
+        console.log('Progress:', progressData);
+        
+        if (progressData.success === 1 && progressData.download_url) {
+          return progressData.download_url;
+        }
+        
+        if (progressData.success === 0 && progressData.progress === 1000) {
+          break; // Error
+        }
       }
     }
+  } catch (e) {
+    console.error('loader.to error:', e);
+  }
 
-    // If all APIs fail, return a redirect to external service
-    const externalUrl = format === 'audio' 
-      ? `https://www.y2mate.com/youtube-mp3/${videoId}`
-      : `https://www.y2mate.com/youtube/${videoId}`;
-
-    return new Response(
-      JSON.stringify({ 
-        success: true, 
-        downloadUrl: externalUrl,
-        external: true,
-        message: 'Redirecionando para serviço externo'
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
-
-  } catch (error) {
-    console.error('Fallback error:', error);
+  // Try y2meta API
+  try {
+    console.log('Trying y2meta...');
+    const y2metaInit = await fetch('https://www.y2meta.com/mates/analyzeV2/ajax', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: `k_query=${encodeURIComponent(youtubeUrl)}&k_page=home&hl=en&q_auto=0`,
+    });
     
-    // Extract video ID for external redirect
-    const videoIdMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([^&\n?#]+)/);
-    const videoId = videoIdMatch?.[1] || '';
+    const y2metaData = await y2metaInit.json();
+    console.log('y2meta response:', y2metaData);
     
-    const externalUrl = format === 'audio' 
-      ? `https://www.y2mate.com/youtube-mp3/${videoId}`
-      : `https://www.y2mate.com/youtube/${videoId}`;
+    if (y2metaData.status === 'ok' && y2metaData.links) {
+      const links = format === 'audio' ? y2metaData.links.mp3 : y2metaData.links.mp4;
+      if (links) {
+        const qualityKey = Object.keys(links).find(k => 
+          format === 'audio' ? k.includes('128') || k.includes('mp3') : k.includes(quality)
+        ) || Object.keys(links)[0];
+        
+        if (qualityKey && links[qualityKey]) {
+          const convertResponse = await fetch('https://www.y2meta.com/mates/convertV2/index', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: `vid=${y2metaData.vid}&k=${links[qualityKey].k}`,
+          });
+          
+          const convertData = await convertResponse.json();
+          console.log('y2meta convert response:', convertData);
+          
+          if (convertData.status === 'ok' && convertData.dlink) {
+            return convertData.dlink;
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.error('y2meta error:', e);
+  }
 
-    return new Response(
-      JSON.stringify({ 
-        success: true, 
-        downloadUrl: externalUrl,
-        external: true,
-        message: 'Redirecionando para serviço externo'
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+  // Fallback: Return direct service URL
+  console.log('Using fallback direct URL');
+  if (format === 'audio') {
+    return `https://api.vevioz.com/api/button/mp3/${videoId}`;
+  } else {
+    return `https://api.vevioz.com/api/button/videos/${videoId}`;
   }
 }
