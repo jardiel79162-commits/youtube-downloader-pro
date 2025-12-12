@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 import { Download, Play, Link2, AlertCircle, Loader2, Music, Video, Check } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -15,6 +16,15 @@ const qualityOptions: { value: VideoQuality; label: string }[] = [
   { value: "1080", label: "1080p Full HD" },
 ];
 
+const progressSteps = [
+  { progress: 10, message: "Conectando ao servidor..." },
+  { progress: 25, message: "Analisando vídeo..." },
+  { progress: 45, message: "Extraindo mídia..." },
+  { progress: 65, message: "Convertendo formato..." },
+  { progress: 80, message: "Preparando download..." },
+  { progress: 95, message: "Quase pronto..." },
+];
+
 const VideoDownloader = () => {
   const [url, setUrl] = useState("");
   const [videoId, setVideoId] = useState<string | null>(null);
@@ -22,6 +32,28 @@ const VideoDownloader = () => {
   const [isDownloading, setIsDownloading] = useState(false);
   const [format, setFormat] = useState<DownloadFormat>("video");
   const [quality, setQuality] = useState<VideoQuality>("720");
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [progressMessage, setProgressMessage] = useState("");
+
+  // Animate progress during download
+  useEffect(() => {
+    if (!isDownloading) {
+      setDownloadProgress(0);
+      setProgressMessage("");
+      return;
+    }
+
+    let currentStep = 0;
+    const interval = setInterval(() => {
+      if (currentStep < progressSteps.length) {
+        setDownloadProgress(progressSteps[currentStep].progress);
+        setProgressMessage(progressSteps[currentStep].message);
+        currentStep++;
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [isDownloading]);
 
   const extractVideoId = (url: string): string | null => {
     const patterns = [
@@ -74,7 +106,8 @@ const VideoDownloader = () => {
     }
 
     setIsDownloading(true);
-    toast.info("Processando download... Isso pode levar alguns segundos.");
+    setDownloadProgress(5);
+    setProgressMessage("Iniciando...");
     
     try {
       const { data, error } = await supabase.functions.invoke('youtube-download', {
@@ -95,6 +128,12 @@ const VideoDownloader = () => {
       }
 
       if (data.success && data.downloadUrl) {
+        setDownloadProgress(100);
+        setProgressMessage("Download pronto!");
+        
+        // Small delay to show 100%
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
         // Create a hidden link and trigger download
         const link = document.createElement('a');
         link.href = data.downloadUrl;
@@ -182,63 +221,84 @@ const VideoDownloader = () => {
 
           {/* Download Options */}
           <div className="p-6 md:p-8 space-y-6">
-            {/* Format Selection */}
-            <div>
-              <p className="text-sm font-medium text-muted-foreground mb-3">Formato</p>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setFormat("video")}
-                  className={`flex-1 flex items-center justify-center gap-2 p-4 rounded-xl border-2 transition-all duration-300 ${
-                    format === "video"
-                      ? "border-primary bg-primary/10 text-foreground"
-                      : "border-border bg-secondary/50 text-muted-foreground hover:border-primary/50"
-                  }`}
-                >
-                  <Video className="w-5 h-5" />
-                  <span className="font-medium">Vídeo MP4</span>
-                  {format === "video" && <Check className="w-4 h-4 text-primary" />}
-                </button>
-                <button
-                  onClick={() => setFormat("audio")}
-                  className={`flex-1 flex items-center justify-center gap-2 p-4 rounded-xl border-2 transition-all duration-300 ${
-                    format === "audio"
-                      ? "border-primary bg-primary/10 text-foreground"
-                      : "border-border bg-secondary/50 text-muted-foreground hover:border-primary/50"
-                  }`}
-                >
-                  <Music className="w-5 h-5" />
-                  <span className="font-medium">Áudio MP3</span>
-                  {format === "audio" && <Check className="w-4 h-4 text-primary" />}
-                </button>
+            {/* Progress Bar (shown during download) */}
+            {isDownloading && (
+              <div className="space-y-3 p-4 rounded-xl bg-primary/5 border border-primary/20 animate-fade-in">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 text-primary animate-spin" />
+                    <span className="text-sm font-medium text-foreground">{progressMessage}</span>
+                  </div>
+                  <span className="text-sm font-bold text-primary">{downloadProgress}%</span>
+                </div>
+                <Progress value={downloadProgress} className="h-3" />
+                <p className="text-xs text-muted-foreground text-center">
+                  Não feche esta página durante o processamento
+                </p>
               </div>
-            </div>
+            )}
 
-            {/* Quality Selection (only for video) */}
-            {format === "video" && (
-              <div>
-                <p className="text-sm font-medium text-muted-foreground mb-3">Qualidade do Vídeo</p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {qualityOptions.map((option) => (
+            {/* Format Selection */}
+            {!isDownloading && (
+              <>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground mb-3">Formato</p>
+                  <div className="flex gap-3">
                     <button
-                      key={option.value}
-                      onClick={() => setQuality(option.value)}
-                      className={`p-3 rounded-xl border-2 transition-all duration-300 text-sm font-medium ${
-                        quality === option.value
+                      onClick={() => setFormat("video")}
+                      className={`flex-1 flex items-center justify-center gap-2 p-4 rounded-xl border-2 transition-all duration-300 ${
+                        format === "video"
                           ? "border-primary bg-primary/10 text-foreground"
                           : "border-border bg-secondary/50 text-muted-foreground hover:border-primary/50"
                       }`}
                     >
-                      {option.label}
+                      <Video className="w-5 h-5" />
+                      <span className="font-medium">Vídeo MP4</span>
+                      {format === "video" && <Check className="w-4 h-4 text-primary" />}
                     </button>
-                  ))}
+                    <button
+                      onClick={() => setFormat("audio")}
+                      className={`flex-1 flex items-center justify-center gap-2 p-4 rounded-xl border-2 transition-all duration-300 ${
+                        format === "audio"
+                          ? "border-primary bg-primary/10 text-foreground"
+                          : "border-border bg-secondary/50 text-muted-foreground hover:border-primary/50"
+                      }`}
+                    >
+                      <Music className="w-5 h-5" />
+                      <span className="font-medium">Áudio MP3</span>
+                      {format === "audio" && <Check className="w-4 h-4 text-primary" />}
+                    </button>
+                  </div>
                 </div>
-              </div>
+
+                {/* Quality Selection (only for video) */}
+                {format === "video" && (
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground mb-3">Qualidade do Vídeo</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {qualityOptions.map((option) => (
+                        <button
+                          key={option.value}
+                          onClick={() => setQuality(option.value)}
+                          className={`p-3 rounded-xl border-2 transition-all duration-300 text-sm font-medium ${
+                            quality === option.value
+                              ? "border-primary bg-primary/10 text-foreground"
+                              : "border-border bg-secondary/50 text-muted-foreground hover:border-primary/50"
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
 
             {/* Download Button */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-border">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center">
+                <div className={`w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center ${isDownloading ? 'animate-pulse' : ''}`}>
                   {format === "video" ? (
                     <Video className="w-6 h-6 text-primary-foreground" />
                   ) : (
@@ -249,7 +309,9 @@ const VideoDownloader = () => {
                   <p className="text-foreground font-semibold">
                     {format === "video" ? `Vídeo ${quality}p` : "Áudio MP3"}
                   </p>
-                  <p className="text-muted-foreground text-sm">Pronto para baixar</p>
+                  <p className="text-muted-foreground text-sm">
+                    {isDownloading ? "Processando..." : "Pronto para baixar"}
+                  </p>
                 </div>
               </div>
               
@@ -275,15 +337,17 @@ const VideoDownloader = () => {
             </div>
 
             {/* Info Alert */}
-            <div className="p-4 rounded-xl bg-secondary/50 border border-border flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-primary mt-0.5 shrink-0" />
-              <p className="text-muted-foreground text-sm">
-                {format === "video" 
-                  ? `O download será processado em qualidade ${quality}p. O arquivo abrirá em uma nova aba.`
-                  : "O áudio será extraído em formato MP3 de alta qualidade."
-                }
-              </p>
-            </div>
+            {!isDownloading && (
+              <div className="p-4 rounded-xl bg-secondary/50 border border-border flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-primary mt-0.5 shrink-0" />
+                <p className="text-muted-foreground text-sm">
+                  {format === "video" 
+                    ? `O download será processado em qualidade ${quality}p. O arquivo abrirá em uma nova aba.`
+                    : "O áudio será extraído em formato MP3 de alta qualidade."
+                  }
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}
