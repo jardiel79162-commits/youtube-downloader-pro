@@ -94,7 +94,12 @@ const VideoDownloader = () => {
       if (data.success && data.downloadUrl) {
         // Open download URL in new tab
         window.open(data.downloadUrl, '_blank');
-        toast.success(`Download iniciado! ${format === 'audio' ? 'MP3' : `Vídeo ${quality}p`}`);
+        
+        if (data.external) {
+          toast.info("Redirecionando para serviço de download externo...");
+        } else {
+          toast.success(`Download iniciado! ${format === 'audio' ? 'MP3' : `Vídeo ${quality}p`}`);
+        }
       } else if (data.picker && data.options) {
         // If there are multiple options, use the first one
         const firstOption = data.options[0];
