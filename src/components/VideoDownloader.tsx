@@ -74,6 +74,7 @@ const VideoDownloader = () => {
     }
 
     setIsDownloading(true);
+    toast.info("Processando download... Isso pode levar alguns segundos.");
     
     try {
       const { data, error } = await supabase.functions.invoke('youtube-download', {
@@ -84,6 +85,8 @@ const VideoDownloader = () => {
         },
       });
 
+      console.log('Download response:', data);
+
       if (error) {
         console.error('Edge function error:', error);
         toast.error("Erro ao processar o download. Tente novamente.");
@@ -92,25 +95,25 @@ const VideoDownloader = () => {
       }
 
       if (data.success && data.downloadUrl) {
-        // Open download URL in new tab
-        window.open(data.downloadUrl, '_blank');
+        // Create a hidden link and trigger download
+        const link = document.createElement('a');
+        link.href = data.downloadUrl;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
         
-        if (data.external) {
-          toast.info("Redirecionando para serviço de download externo...");
-        } else {
-          toast.success(`Download iniciado! ${format === 'audio' ? 'MP3' : `Vídeo ${quality}p`}`);
+        // For direct download
+        if (data.downloadUrl.includes('.mp3') || data.downloadUrl.includes('.mp4') || 
+            data.downloadUrl.includes('download') || data.downloadUrl.includes('vevioz')) {
+          link.download = `youtube_${data.videoId || videoId}.${format === 'audio' ? 'mp3' : 'mp4'}`;
         }
-      } else if (data.picker && data.options) {
-        // If there are multiple options, use the first one
-        const firstOption = data.options[0];
-        if (firstOption?.url) {
-          window.open(firstOption.url, '_blank');
-          toast.success("Download iniciado!");
-        } else {
-          toast.error("Não foi possível obter o link de download");
-        }
+        
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        toast.success(`Download iniciado! ${format === 'audio' ? 'MP3' : `Vídeo ${quality}p`}`);
       } else {
-        toast.error(data.error || "Erro ao processar o download");
+        toast.error(data.error || "Erro ao processar o download. Tente outro vídeo.");
       }
     } catch (err) {
       console.error('Download error:', err);
