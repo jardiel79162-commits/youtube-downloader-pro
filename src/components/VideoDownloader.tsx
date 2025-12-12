@@ -1,14 +1,27 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Download, Play, Link2, AlertCircle, Loader2 } from "lucide-react";
+import { Download, Play, Link2, AlertCircle, Loader2, Music, Video, Check } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+
+type DownloadFormat = "video" | "audio";
+type VideoQuality = "360" | "480" | "720" | "1080";
+
+const qualityOptions: { value: VideoQuality; label: string }[] = [
+  { value: "360", label: "360p" },
+  { value: "480", label: "480p" },
+  { value: "720", label: "720p HD" },
+  { value: "1080", label: "1080p Full HD" },
+];
 
 const VideoDownloader = () => {
   const [url, setUrl] = useState("");
   const [videoId, setVideoId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [videoInfo, setVideoInfo] = useState<{ title: string; thumbnail: string } | null>(null);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [format, setFormat] = useState<DownloadFormat>("video");
+  const [quality, setQuality] = useState<VideoQuality>("720");
 
   const extractVideoId = (url: string): string | null => {
     const patterns = [
@@ -29,7 +42,6 @@ const VideoDownloader = () => {
     
     if (newUrl.trim() === "") {
       setVideoId(null);
-      setVideoInfo(null);
     }
   };
 
@@ -48,29 +60,59 @@ const VideoDownloader = () => {
       return;
     }
 
-    // Simulating API call to get video info
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, 500));
     
     setVideoId(id);
-    setVideoInfo({
-      title: "Vídeo do YouTube",
-      thumbnail: `https://img.youtube.com/vi/${id}/maxresdefault.jpg`,
-    });
-    
     toast.success("Vídeo carregado com sucesso!");
     setIsLoading(false);
   };
 
-  const handleDownload = () => {
-    if (!videoId) {
+  const handleDownload = async () => {
+    if (!videoId || !url) {
       toast.error("Primeiro carregue um vídeo");
       return;
     }
 
-    // Open a download service (using a common YouTube download service)
-    const downloadUrl = `https://www.y2mate.com/youtube/${videoId}`;
-    window.open(downloadUrl, "_blank");
-    toast.info("Redirecionando para o serviço de download...");
+    setIsDownloading(true);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('youtube-download', {
+        body: { 
+          url: url,
+          format: format,
+          quality: quality
+        },
+      });
+
+      if (error) {
+        console.error('Edge function error:', error);
+        toast.error("Erro ao processar o download. Tente novamente.");
+        setIsDownloading(false);
+        return;
+      }
+
+      if (data.success && data.downloadUrl) {
+        // Open download URL in new tab
+        window.open(data.downloadUrl, '_blank');
+        toast.success(`Download iniciado! ${format === 'audio' ? 'MP3' : `Vídeo ${quality}p`}`);
+      } else if (data.picker && data.options) {
+        // If there are multiple options, use the first one
+        const firstOption = data.options[0];
+        if (firstOption?.url) {
+          window.open(firstOption.url, '_blank');
+          toast.success("Download iniciado!");
+        } else {
+          toast.error("Não foi possível obter o link de download");
+        }
+      } else {
+        toast.error(data.error || "Erro ao processar o download");
+      }
+    } catch (err) {
+      console.error('Download error:', err);
+      toast.error("Erro de conexão. Tente novamente.");
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   return (
@@ -130,16 +172,76 @@ const VideoDownloader = () => {
             />
           </div>
 
-          {/* Download Section */}
-          <div className="p-6 md:p-8">
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+          {/* Download Options */}
+          <div className="p-6 md:p-8 space-y-6">
+            {/* Format Selection */}
+            <div>
+              <p className="text-sm font-medium text-muted-foreground mb-3">Formato</p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setFormat("video")}
+                  className={`flex-1 flex items-center justify-center gap-2 p-4 rounded-xl border-2 transition-all duration-300 ${
+                    format === "video"
+                      ? "border-primary bg-primary/10 text-foreground"
+                      : "border-border bg-secondary/50 text-muted-foreground hover:border-primary/50"
+                  }`}
+                >
+                  <Video className="w-5 h-5" />
+                  <span className="font-medium">Vídeo MP4</span>
+                  {format === "video" && <Check className="w-4 h-4 text-primary" />}
+                </button>
+                <button
+                  onClick={() => setFormat("audio")}
+                  className={`flex-1 flex items-center justify-center gap-2 p-4 rounded-xl border-2 transition-all duration-300 ${
+                    format === "audio"
+                      ? "border-primary bg-primary/10 text-foreground"
+                      : "border-border bg-secondary/50 text-muted-foreground hover:border-primary/50"
+                  }`}
+                >
+                  <Music className="w-5 h-5" />
+                  <span className="font-medium">Áudio MP3</span>
+                  {format === "audio" && <Check className="w-4 h-4 text-primary" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Quality Selection (only for video) */}
+            {format === "video" && (
+              <div>
+                <p className="text-sm font-medium text-muted-foreground mb-3">Qualidade do Vídeo</p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {qualityOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      onClick={() => setQuality(option.value)}
+                      className={`p-3 rounded-xl border-2 transition-all duration-300 text-sm font-medium ${
+                        quality === option.value
+                          ? "border-primary bg-primary/10 text-foreground"
+                          : "border-border bg-secondary/50 text-muted-foreground hover:border-primary/50"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Download Button */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-border">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-                  <Play className="w-6 h-6 text-primary-foreground" />
+                  {format === "video" ? (
+                    <Video className="w-6 h-6 text-primary-foreground" />
+                  ) : (
+                    <Music className="w-6 h-6 text-primary-foreground" />
+                  )}
                 </div>
                 <div>
-                  <p className="text-foreground font-semibold">Vídeo pronto!</p>
-                  <p className="text-muted-foreground text-sm">Clique para baixar</p>
+                  <p className="text-foreground font-semibold">
+                    {format === "video" ? `Vídeo ${quality}p` : "Áudio MP3"}
+                  </p>
+                  <p className="text-muted-foreground text-sm">Pronto para baixar</p>
                 </div>
               </div>
               
@@ -147,19 +249,31 @@ const VideoDownloader = () => {
                 onClick={handleDownload} 
                 variant="glow" 
                 size="xl"
+                disabled={isDownloading}
                 className="w-full sm:w-auto"
               >
-                <Download className="w-5 h-5" />
-                Baixar Vídeo
+                {isDownloading ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Processando...
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-5 h-5" />
+                    Baixar {format === "video" ? "Vídeo" : "MP3"}
+                  </>
+                )}
               </Button>
             </div>
 
             {/* Info Alert */}
-            <div className="mt-6 p-4 rounded-xl bg-secondary/50 border border-border flex items-start gap-3">
+            <div className="p-4 rounded-xl bg-secondary/50 border border-border flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-primary mt-0.5 shrink-0" />
               <p className="text-muted-foreground text-sm">
-                Você será redirecionado para um serviço externo para completar o download. 
-                Escolha a qualidade desejada na página de download.
+                {format === "video" 
+                  ? `O download será processado em qualidade ${quality}p. O arquivo abrirá em uma nova aba.`
+                  : "O áudio será extraído em formato MP3 de alta qualidade."
+                }
               </p>
             </div>
           </div>
