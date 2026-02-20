@@ -87,7 +87,7 @@ const VideoDownloader = () => {
     const id = extractVideoId(url);
 
     if (!id) {
-      toast.error("Link inválido. Por favor, cole um link válido do YouTube");
+      toast.error("Link inválido. Por favor, cole um link válido do YouTube-JTC");
       setIsLoading(false);
       return;
     }
