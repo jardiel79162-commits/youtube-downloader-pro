@@ -2,27 +2,41 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Import Google Font from tailwind.config - Outfit */
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+
 @layer base {
-  :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 210 40% 9.8%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 210 40% 9.8%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
+  :root,
+  .dark {
+    /* Netflix Dark Theme */
+    --background: 0 0% 8%; /* #141414 */
+    --foreground: 0 0% 98%; /* near white */
+
+    --card: 0 0% 12%; /* #1F1F1F */
+    --card-foreground: 0 0% 98%;
+
+    --popover: 0 0% 8%;
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 357 92% 46%; /* #E50914 */
+    --primary-foreground: 0 0% 100%; /* White */
+
+    --secondary: 0 0% 15%; /* Darker grey */
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 63%; /* #A0A0A0 */
+
+    --accent: 357 100% 60%; /* Brighter red for gradient */
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 51%; /* A brighter, more alarming red */
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 0 0% 15%;
+    --input: 0 0% 15%;
+    --ring: 357 92% 46%; /* #E50914 */
+
     --radius: 0.75rem;
   }
 }
@@ -32,53 +46,46 @@
     @apply border-border;
   }
   body {
-    @apply text-foreground;
-    background-color: hsl(var(--background));
-    background-image: radial-gradient(circle at 10% 20%, hsl(var(--primary) / 0.1), transparent 40%),
-                      radial-gradient(circle at 90% 80%, hsl(var(--accent) / 0.15), transparent 50%);
-    min-height: 100vh;
+    @apply bg-background text-foreground font-primary;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 }
 
-/* Custom styles */
-.text-gradient {
-  @apply bg-gradient-to-r from-primary to-blue-400 bg-clip-text text-transparent;
-}
+/* Custom global styles */
 
-.glass {
-  background: hsl(var(--background) / 0.6);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid hsl(var(--border) / 0.8);
+.text-gradient {
+  background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--accent)) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-fill-color: transparent;
 }
 
 .glow-effect {
-  box-shadow: 0 0 15px 5px hsl(var(--primary) / 0.4);
+  box-shadow: 0 0 15px 5px hsla(var(--primary), 0.3), 0 0 30px 10px hsla(var(--primary), 0.2);
 }
 
-.animate-float {
-  animation: float 3s ease-in-out infinite;
+.glass {
+  /* Using card as base color for glass effect */
+  background-color: hsla(var(--card) / 0.6);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  border: 1px solid hsla(var(--border) / 0.2);
 }
 
 @keyframes float {
-  0%, 100% {
-    transform: translateY(0);
+  0% {
+    transform: translateY(0px);
   }
   50% {
     transform: translateY(-10px);
   }
+  100% {
+    transform: translateY(0px);
+  }
 }
 
-button[variant="hero"] {
-  /* ... custom button styles if any */
-}
-
-button[variant="glow"] {
-    position: relative;
-    overflow: hidden;
-    box-shadow: 0 0 10px 2px hsl(var(--primary) / 0.5), 0 0 20px 5px hsl(var(--primary) / 0.3);
-    transition: box-shadow 0.3s ease-in-out;
-}
-button[variant="glow"]:hover {
-    box-shadow: 0 0 15px 5px hsl(var(--primary) / 0.7), 0 0 30px 10px hsl(var(--primary) / 0.4);
+.animate-float {
+  animation: float 4s ease-in-out infinite;
 }
